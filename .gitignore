@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+
+# IDE/editor state
+.idea/
+.vscode/
+
+# Local datasets and generated experiment outputs
+CTCA_8/
+results/
+trained_CTCA/
+25_*/
+26_*/
+datasets/CTCA/
+datasets/CTCA_masked/
+datasets/data/
+
+# Logs and background-run outputs
+*.log
+nohup.out
+output*.log
+continuous*.log
+
+# Model/checkpoint artifacts
+*.pth
+*.pt
+*.pkl
+*.tfevents*
+events.out.tfevents.*
+
+# Generated analysis artifacts
+*.xlsx
+*.xls
+*.png
+*.pdf

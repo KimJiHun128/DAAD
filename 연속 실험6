@@ -1,0 +1,126 @@
+nohup bash -c '
+GPU=1
+LOG_GROUP=daad_ctca_cv6
+RESULTS_PATH=/home/jihun/PycharmProjects/DAAD/results
+DATA_PATH=/home/jihun/PycharmProjects/DAAD/CTCA_8
+SEEDS="101"
+FOLDS="1 2 3 4"
+
+run_experiment() {
+  exp_name=$1
+  backbone=$2
+  real_aug=$3
+  fake_aug=$4
+  true_fla=$5
+  false_fla=$6
+  fs_mode=$7
+  keep_ratio=$8
+  image_gap=$9
+  fold=${10}
+  seed=${11}
+  if [ "$real_aug" = "$fake_aug" ]; then
+    ila_part="ILA${real_aug}"
+  else
+    ila_part="realaug${real_aug}_fakeaug${fake_aug}"
+  fi
+  run_dir="${RESULTS_PATH}/CTCA/${LOG_GROUP}/${exp_name}_seed${seed}_CVfold${fold}of4_${ila_part}_truefla${true_fla}_fakefla${false_fla}_FS${fs_mode}"
+
+  if [ -f "${run_dir}/evaluation_results.txt" ]; then
+    echo "Skipping completed exp=${exp_name}, fold=${fold}, seed=${seed}: ${run_dir}/evaluation_results.txt exists"
+    return 0
+  fi
+
+  echo "Running exp=${exp_name}, fold=${fold}, seed=${seed}, backbone=${backbone}, ILA=${real_aug}/${fake_aug}, FLA=${true_fla}/${false_fla}, FS=${fs_mode}, ratio=${keep_ratio}, image_gap=${image_gap}"
+
+  python3 main.py \
+    --gpu $GPU \
+    --seed $seed \
+    --log_group $LOG_GROUP \
+    --log_project CTCA \
+    --results_path $RESULTS_PATH \
+    --run_name ${exp_name}_seed${seed} \
+    net \
+    -b $backbone \
+    -le layer2 \
+    -le layer3 \
+    --pretrain_embed_dimension 256 \
+    --target_embed_dimension 256 \
+    --patchsize 3 \
+    --patchstride 2 \
+    --meta_epochs 10 \
+    --embedding_size 64 \
+    --gan_epochs 1 \
+    --noise_std 0.025 \
+    --dsc_hidden 512 \
+    --dsc_layers 2 \
+    --dsc_margin .5 \
+    --pre_proj 1 \
+    --true_fla $true_fla \
+    --false_fla $false_fla \
+    --fs_mode $fs_mode \
+    --fs_keep_ratio $keep_ratio \
+    --image_gap $image_gap \
+    dataset \
+    --cv_fold $fold \
+    --cv_num_folds 4 \
+    --real_aug $real_aug \
+    --fake_aug $fake_aug \
+    --batch_size 1024 \
+    --resize 48 \
+    --imagesize 36 \
+    --rotate_degrees 30 \
+    --translate 0.2 \
+    --brightness 0.2 \
+    --scale 0.2 \
+    --contrast 0.2 \
+    --hflip 0.5 \
+    --vflip 0.5 \
+    CTCA $DATA_PATH \
+    > output6_${exp_name}_fold${fold}_seed${seed}.log 2>&1
+}
+
+for seed in $SEEDS
+do
+  for fold in $FOLDS
+  do
+    # Main experiment: original ResNet18 setting with ILA, FLA, and FS-both.
+    run_experiment main resnet18 1 1 5 5 both 0.5 5 $fold $seed
+
+    # Module ablation.
+    run_experiment ablation_no_ila_no_fla_no_fs resnet18 0 0 0 1 none 0.5 5 $fold $seed
+    run_experiment ablation_ila_only resnet18 1 1 0 1 none 0.5 5 $fold $seed
+    run_experiment ablation_fla_only resnet18 0 0 5 5 none 0.5 5 $fold $seed
+    run_experiment ablation_fs_only resnet18 0 0 0 1 both 0.5 5 $fold $seed
+    run_experiment ablation_ila_fla_no_fs resnet18 1 1 5 5 none 0.5 5 $fold $seed
+    run_experiment ablation_fla_fs_no_ila resnet18 0 0 5 5 both 0.5 5 $fold $seed
+
+    # FS mode comparison.
+    # FS none is covered by ablation_ila_fla_no_fs, and FS both is covered by main.
+    for fs in gap gmp
+    do
+      run_experiment fs_${fs} resnet18 1 1 5 5 $fs 0.5 5 $fold $seed
+    done
+
+    # Feature selection keep-ratio sensitivity.
+    # Ratio 0.5 is covered by main.
+    for ratio in 0.1 0.3 0.7 0.9 1.0
+    do
+      run_experiment ratio_${ratio} resnet18 1 1 5 5 both $ratio 5 $fold $seed
+    done
+
+    # Image gap sensitivity.
+    # Image gap 5 is covered by main.
+    for gap in 1 3 10 50 100
+    do
+      run_experiment gap_${gap} resnet18 1 1 5 5 both 0.5 $gap $fold $seed
+    done
+
+    # Backbone comparison. Main method is still ResNet18; others are for robustness.
+    # ResNet18 is covered by main.
+    for backbone in resnet34 resnet50 resnet101
+    do
+      run_experiment backbone_${backbone} $backbone 1 1 5 5 both 0.5 5 $fold $seed
+    done
+  done
+done
+' > continuous6.log 2>&1 &
